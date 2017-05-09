@@ -26,14 +26,14 @@
 
 /**
 Define the pitch of the notes we want to tune to,
-named according to scientific pitch notation
+defined as to where we expect to find the note in FHT's output.
 **/
-float E_2 = 82.41;
-float A_2 = 110.00;
-float D_3 = 146.83;
-float G_3 = 196.00;
-float B_3 = 246.94;
-float E_4 = 329.63;
+uint16_t E_2 = 24;
+uint16_t A_2 = 31;
+uint16_t D_3 = 42;
+uint16_t G_3 = 56;
+uint16_t B_3 = 71;
+uint16_t E_4 = 94;
 
 
 class GuitarduinoDisplay
@@ -45,7 +45,7 @@ class GuitarduinoDisplay
 
  		uint16_t noteBrightness;
 		char lastNoteName;
-		float pitchOffset;
+		int16_t pitchOffset;
 
 		//Definitions for what pixels need to be on to represent the note we want to display
 		uint16_t E[19] = {
@@ -133,28 +133,31 @@ class GuitarduinoDisplay
 		}
 	}
 	
-	void setPitch(float referenceFreq, float inputFreq)
+	/**
+	* Takes a reference bin and an input bin and maps the offset how in tune the note is, then displays it
+	*/
+	void setPitch(uint16_t referenceBin, uint16_t inputBin)
 	{
-		pitchOffset = inputFreq - referenceFreq; //if pitchOffset is positive, the note is sharp, if negative, the note is flat
+		pitchOffset = inputBin - referenceBin; //if pitchOffset is positive, the note is sharp, if negative, the note is flat
 		clearPitch();
-		if(pitchOffset > 5.00)
+		if(pitchOffset > 1)
 		{
 			matrix.setPixelColor(32, (100 + noteBrightness*255/255), 0, 0);
 
 		}
-		if(pitchOffset <= 5.00 && pitchOffset > 1.00)
+		if(pitchOffset == 1)
 		{
 			matrix.setPixelColor(24, (50 + noteBrightness*255/255), (50 + noteBrightness*255/255), (noteBrightness*51/255));
 		}
-		if(pitchOffset <= 1.00 && pitchOffset >= -1.00)
+		if(pitchOffset == 0)
 		{
 			matrix.setPixelColor(16,(noteBrightness*50/255), (100 + noteBrightness*255/255), (noteBrightness*50/255));
 		}
-		if(pitchOffset < -1.00 && pitchOffset >= -5.00)
+		if(pitchOffset == -1)
 		{
 			matrix.setPixelColor(8, (50 + noteBrightness*255/255), (50 + noteBrightness*255/255), (noteBrightness*51/255));
 		}
-		if(pitchOffset < -5.00)
+		if(pitchOffset < -1)
 		{
 			matrix.setPixelColor(0, (100 + noteBrightness*255/255), 0, 0);
 		}
@@ -196,53 +199,72 @@ GuitarduinoDisplay display(12); //Instantiate our object and set brightness to ~
 
 void setup() 
 {
-	display.setNote('B');
-	display.setNote('E');
-	display.setPitch(E_2, 75.00);
-	Serial.begin(115200); // use the serial port
-	TIMSK0 = 0; // turn off timer0 for lower jitter
-	ADCSRA = 0xe5; // set the adc to free running mode
-	ADMUX = 0x40; // use adc0
-	DIDR0 = 0x01; // turn off the digital input for adc0 
+	ADCSRB = 0x08; 
+	ADCSRA = 0xe7; // free running mode, and set adc prescaler factor to 128
+	ADMUX = 0x40; // use adc8
+	DIDR2 = 0x01; // turn off digital input 
 }
 
 
-//Took the FHT code from the source below for debugging.
-//REMINDER TO REPLACE IT
 
-/*
-fht_adc.pde
-guest openmusiclabs.com 9.5.12
-example sketch for testing the fht library.
-it takes in data on ADC0 (Analog0) and processes them
-with the fht. the data is sent out over the serial
-port at 115.2kb.  there is a pure data patch for
-visualizing the data.
-*/
 
 void loop() 
 {
 	while(1) 
-	{ // reduces jitter
-		cli();  // UDRE interrupt slows this way down on arduino1.0
+	{ 
+		cli();  
 		for (int i = 0 ; i < FHT_N ; i++) 
-		{ // save 256 samples
-			while(!(ADCSRA & 0x10)); // wait for adc to be ready
+		{
 			ADCSRA = 0xf5; // restart adc
-			byte m = ADCL; // fetch adc data
-			byte j = ADCH;
-			int k = (j << 8) | m; // form into an int
-			k -= 0x0200; // form into a signed int
-			k <<= 6; // form into a 16b signed int				
-			fht_input[i] = k; // put real data into bins
+			while(!(ADCSRA & 0x10)); // wait for adc to be ready				
+			fht_input[i] = ADC; 
+			delayMicroseconds(1100); //Introduce delay to increase resolution
 		}
-		fht_window(); // window the data for better frequency response
-		fht_reorder(); // reorder the data before doing the fht
-		fht_run(); // process the data in the fht
-		fht_mag_log(); // take the output of the fht
+		fht_window();  //FHT magic
+		fht_reorder(); 
+		fht_run(); 
+		fht_mag_log(); 
 		sei();
-		//Serial.write(255); // send a start byte
-		//Serial.write(fht_log_out, FHT_N/2); // send out the data
-		
+		int maxAmpIndex = 0;
+		int maxAmp = 0;
+		for(int i = 2; i < FHT_N/2; i++) //start at index two because of weird noise
+		{
+			if(fht_log_out[i] > maxAmp)
+			{
+				maxAmp = fht_log_out[i];
+				maxAmpIndex = i;
+			}	
+		}
+		//Logic to figure out what note is being played
+		if(maxAmpIndex >= 21 && maxAmpIndex <= 27)
+		{
+			display.setNote('E');
+			display.setPitch(E_2, maxAmpIndex);
+		}
+		if(maxAmpIndex >= 28 && maxAmpIndex <= 36)
+		{
+			display.setNote('A');
+			display.setPitch(A_2, maxAmpIndex);
+		}
+		if(maxAmpIndex >= 37 && maxAmpIndex <= 49)
+		{
+			display.setNote('D');
+			display.setPitch(D_3, maxAmpIndex);
+		}
+		if(maxAmpIndex >= 50 && maxAmpIndex <= 65)
+		{
+			display.setNote('G');
+			display.setPitch(G_3, maxAmpIndex);
+		}
+		if(maxAmpIndex >= 66 && maxAmpIndex <= 80)
+		{
+			display.setNote('B');
+			display.setPitch(B_3, maxAmpIndex);
+		}
+		if(maxAmpIndex >= 80 && maxAmpIndex <= 114)
+		{
+			display.setNote('E');
+			display.setPitch(E_4, maxAmpIndex);
+		}	
 	}
 }
