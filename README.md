@@ -1,4 +1,4 @@
-## guitarduino
+### guitarduino
 An arduino guitar tuner for UMass Boston's ENGIN-104 class  
 Designed to be run an Arduino Mega2560
   
