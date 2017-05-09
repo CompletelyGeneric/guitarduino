@@ -217,7 +217,13 @@ void loop()
 		{
 			ADCSRA = 0xf5; // restart adc
 			while(!(ADCSRA & 0x10)); // wait for adc to be ready				
-			fht_input[i] = ADC; 
+			ADCSRA = 0xf5; // restart adc
+			byte m = ADCL; // fetch adc data
+			byte j = ADCH;
+			int k = (j << 8) | m; // form into an int
+			k -= 0x0200; // form into a signed int
+			k <<= 6; // form into a 16b signed int
+			fht_input[i] = k; // put real data into bins
 			delayMicroseconds(1100); //Introduce delay to increase resolution
 		}
 		fht_window();  //FHT magic
